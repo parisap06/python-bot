@@ -1,1 +1,6 @@
-discord
+discord.py
+asyncio
+os
+aiofiles
+itertools
+discord.ext
