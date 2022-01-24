@@ -1,1 +1,1 @@
-Worker: python ./python-bot/bot.py
+Worker: web ./python-bot/bot.py
