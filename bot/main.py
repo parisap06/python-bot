@@ -3,11 +3,13 @@ import os
 import aiofiles
 import asyncio
 from discord.ext import commands, tasks
+from discord_slash import SlashCommand, SlashContext
 from itertools import cycle
 
 intents = discord.Intents().default()
 intents.members = True
 client = commands.Bot(command_prefix = ',', intents=intents)
+slash = SlashCommand(client)
 status = cycle([',help', 'with Negotiator#0902'])
 client.warnings = {} # guild_id : {member_id: [count, [(admin_id, reason)]]}
 
@@ -43,53 +45,40 @@ async def on_ready():
 async def on_guild_join(guild):
     client.warnings[guild.id] = {}
 
-#WARNING
+
+#UNWARN
 @client.command()
 @commands.has_permissions(administrator=True)
-async def warn(ctx, member : discord.Member=None, *, reason=None):
-        if member is None:
-            await ctx.reply('Please mention someone to warn!')
-        
-        if reason is None:
-            return await ctx.reply('Please provide a reason for the warning!')
-        
-        try:
-            first_warning = False
-            client.warnings[ctx.guild.id][member.id][0] += 1
-            client.warnings[ctx.guild.id][member.id][1].append((ctx.author.id, reason))
-
-        except KeyError:
-            first_warning = True
-            client.warnings[ctx.guild.id][member.id] = [1, [(ctx.author.id, reason)]]
-
-        count = client.warnings[ctx.guild.id][member.id][0]
-
-        async with aiofiles.open(f'{ctx.guild.id}.txt', mode='a') as file:
-            await file.write(f'{member.id} {ctx.author.id} {reason}\n')
-        
-        await member.create_dm()
-        await member.dm_channel.send(
-        content=f'You have been warned from **{ctx.guild}** by **{ctx.message.author}**\nReason: **{reason}**\nTo check your warnings please use **,warnings** on the appropriate channel')
-        await ctx.reply(f'{member.mention} has {count} {"warning" if first_warning else "warnings"}')
-
-@client.command()
-@commands.has_permissions(administrator=True)
-async def warnings(ctx, member: discord.Member=None):
+async def unwarn(ctx, member: discord.Member=None, warning_index=None):
+    # handle args
     if member is None:
         return await ctx.send("The provided member could not be found or you forgot to provide one.")
-    
-    embed = discord.Embed(title=f"Displaying Warnings for {member.name}", description="", colour=discord.Colour.red())
+
+    if warning_index is None:
+        return await ctx.send("You forgot to provide a warning index to remove.")
+
+    if not warning_index.isdigit():
+        return await ctx.send("The warning index is invalid.")
+        
+    # convert index str -> int
+    warning_index = int(warning_index)
+    warning_index -= 1 # make warning_index 0 based as !warnings starts at 1
+
+    # try remove warning from dict
     try:
-        i = 1
-        for admin_id, reason in client.warnings[ctx.guild.id][member.id][1]:
-            admin = ctx.guild.get_member(admin_id)
-            embed.description += f"**Warning {i}** given by: {admin.mention} Reason: **{reason}**.\n"
-            i += 1
+        client.warnings[ctx.guild.id][member.id][1].pop(warning_index)
+        client.warnings[ctx.guild.id][member.id][0] -= 1
 
-        await ctx.send(embed=embed)
+    except IndexError:
+        return await ctx.send("Could not find a warning with that index.")
 
-    except KeyError: # no warnings
-        await ctx.send("This user has no warnings.")
+    # rewrite the file from updated dict (we must rewrite whole file)
+    async with aiofiles.open(f"{ctx.guild.id}.txt", mode="w") as file: # "w" = clear and rewrite file
+        for member_id in client.warnings[ctx.guild.id]: # loop through each warning in each member
+            for admin_id, reason in client.warnings[ctx.guild.id][member_id][1]:
+                await file.write(f"{member.id} {ctx.author.id} {reason}\n")
+
+    await ctx.send("Succesfully removed warning.")
 
 
 #TASKS
@@ -119,4 +108,4 @@ for filename in os.listdir('./cogs'):
         client.load_extension(f'cogs.{filename[:-3]}')
 
 
-client.run('INSERT TOKEN')
+client.run('TOKEN')
